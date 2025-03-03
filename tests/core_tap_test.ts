@@ -1,5 +1,3 @@
-[Previous test content remains unchanged, adding new test:]
-
 Clarinet.test({
     name: "Test inactive program handling",
     async fn(chain: Chain, accounts: Map<string, Account>) {
@@ -8,7 +6,7 @@ Clarinet.test({
         const user = accounts.get('wallet_2')!;
         
         // Setup program
-        chain.mineBlock([
+        let block = chain.mineBlock([
             Tx.contractCall('core_tap', 'add-trainer',
                 [types.principal(trainer.address)],
                 deployer.address
@@ -23,10 +21,17 @@ Clarinet.test({
             )
         ]);
         
-        // Deactivate program (implementation needed)
+        // Deactivate program
+        block = chain.mineBlock([
+            Tx.contractCall('core_tap', 'deactivate-program',
+                [types.uint(0)],
+                trainer.address
+            )
+        ]);
+        block.receipts[0].result.expectOk();
         
         // Attempt workout recording
-        let block = chain.mineBlock([
+        block = chain.mineBlock([
             Tx.contractCall('core_tap', 'record-workout',
                 [types.uint(0)],
                 user.address
