@@ -11,39 +11,51 @@
 (define-constant err-invalid-achievement (err u105))
 (define-constant err-inactive-program (err u106))
 
-;; [Previous code remains unchanged until check-achievements function]
-
 ;; Check and award achievements
 (define-private (check-achievements (user principal) (program-id uint))
     (let 
-        ((progress (unwrap-panic (map-get? user-progress { user: user, program-id: program-id })))
-         (program (unwrap-panic (map-get? programs program-id))))
-        (asserts! (get active program) err-inactive-program)
-        (ok (fold check-single-achievement 
-            (get-achievements-for-program program-id)
-            (ok true)))
+        ((progress (map-get? user-progress { user: user, program-id: program-id }))
+         (program (map-get? programs program-id)))
+        (match (tuple progress program)
+            success (begin
+                (asserts! (get active (get program success)) err-inactive-program)
+                (ok (fold check-single-achievement 
+                    (get-achievements-for-program program-id)
+                    (ok true)))
+            )
+            failure err-invalid-program
+        )
     )
 )
 
 ;; Check single achievement
 (define-private (check-single-achievement (achievement-id uint) (prior (response bool bool)))
     (let 
-        ((achievement (unwrap-panic (map-get? achievements achievement-id)))
-         (user-progress (unwrap-panic (map-get? user-progress 
-             { user: tx-sender, program-id: (get program-id achievement) }))))
-        (if (and
-                (is-ok prior)
-                (>= (get completed-workouts user-progress) (get required-workouts achievement))
+        ((achievement (map-get? achievements achievement-id))
+         (user-progress (map-get? user-progress 
+             { user: user, program-id: (get program-id achievement) })))
+        (match (tuple achievement user-progress)
+            success (if (and
+                    (is-ok prior)
+                    (>= (get completed-workouts (get user-progress success)) 
+                        (get required-workouts (get achievement success)))
+                )
+                (award-achievement user achievement-id)
+                prior
             )
-            (award-achievement tx-sender achievement-id)
-            prior
+            failure prior
         )
     )
 )
 
+;; Get achievements for specific program
+(define-read-only (get-achievements-for-program (program-id uint))
+    (filter get-achievement-for-program (get-achievement-ids))
+)
+
 ;; Helper function to get achievement IDs
 (define-read-only (get-achievement-ids)
-    (ok (map uint-to-buff (list u0 u1 u2 u3 u4 u5 u6 u7 u8 u9)))
+    (map-get? achievement-index 'all-achievements)
 )
 
 ;; Helper function to filter achievements by program
@@ -54,4 +66,19 @@
     )
 )
 
-;; [Rest of the contract remains unchanged]
+;; Deactivate program
+(define-public (deactivate-program (program-id uint))
+    (let ((program (map-get? programs program-id)))
+        (match program
+            existing (begin
+                (asserts! (or 
+                    (is-eq tx-sender contract-owner)
+                    (is-eq tx-sender (get trainer existing))
+                ) err-owner-only)
+                (ok (map-set programs program-id 
+                    (merge existing { active: false })))
+            )
+            failure err-invalid-program
+        )
+    )
+)
